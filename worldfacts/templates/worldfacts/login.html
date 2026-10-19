@@ -1,0 +1,48 @@
+{% extends 'worldfacts/base.html' %}
+
+{% block title %}Zaloguj się — Worldfacts{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center my-4">
+    <div class="col-md-5 col-lg-4">
+        
+        <div class="text-center mb-4">
+            <h1 class="fw-bold text-dark display-5">
+                <i class="bi bi-compass-fill text-warning me-2"></i>Worldfacts
+            </h1>
+            <p class="text-muted">Zaloguj się, aby zapisywać ulubione miejsca i notatki</p>
+        </div>
+
+        <div class="card card-custom p-4 bg-white">
+            <form method="POST">
+                {% csrf_token %}
+                
+                {% if form.errors %}
+                    <div class="alert alert-danger py-2" role="alert">
+                        <small>Nieprawidłowy login lub hasło.</small>
+                    </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label class="form-label font-weight-bold">Nazwa użytkownika</label>
+                    <input type="text" name="username" class="form-control" required autofocus>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label font-weight-bold">Hasło</label>
+                    <input type="password" name="password" class="form-control" required>
+                </div>
+
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary btn-lg">Zaloguj się</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="text-center mt-3">
+            <small class="text-muted">Nie masz jeszcze konta? <a href="{% url 'register' %}" class="fw-bold text-decoration-none">Zarejestruj się</a></small>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

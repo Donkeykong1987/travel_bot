@@ -1,0 +1,103 @@
+{% extends 'worldfacts/base.html' %}
+
+{% block title %}Wyszukaj miejsce — Worldfacts{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        
+        <!-- Pasek Wyszukiwania -->
+        <div class="card card-custom p-4 mb-4 bg-white text-center">
+            <h2 class="fw-bold mb-2"><i class="bi bi-search text-warning me-2"></i>Odkryj miejsce na świecie</h2>
+            <p class="text-muted mb-4">Wpisz nazwę miasta, budynku, zabytku lub regionu.</p>
+            
+            <form method="GET" action="{% url 'explore' %}" class="d-flex gap-2 mb-3">
+                <input type="text" name="q" class="form-control form-control-lg" placeholder="np. Colosseum, Wawel, Tokio..." value="{{ query }}" required autofocus>
+                <button type="submit" class="btn btn-warning btn-lg px-4 fw-bold">Szukaj</button>
+            </form>
+
+            <!-- Sekcja: Ostatnio wyszukiwane miejsca -->
+            {% if recent_places %}
+            <div class="text-start border-top pt-3 mt-2">
+                <small class="text-muted fw-bold d-block mb-2">
+                    <i class="bi bi-clock-history me-1"></i>Ostatnio wyszukiwane:
+                </small>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for recent in recent_places %}
+                        <a href="{% url 'explore' %}?q={{ recent.name }}" class="btn btn-outline-secondary btn-sm rounded-pill">
+                            <i class="bi bi-geo-alt me-1"></i>{{ recent.name }}
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if searched %}
+            {% if place %}
+            <!-- Wynik Wyszukiwania -->
+            <div class="card card-custom p-4 mb-4 bg-white">
+                {% if place.image_url %}
+                    <img src="{{ place.image_url }}" alt="{{ place.name }}" class="hero-img mb-4">
+                {% endif %}
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h1 class="h2 fw-bold mb-0">{{ place.name }}</h1>
+                    {% if user.is_authenticated %}
+                        <a href="{% url 'toggle_favorite' place.id %}?q={{ query }}" class="btn {% if is_favorite %}btn-warning{% else %}btn-outline-warning{% endif %} btn-lg rounded-circle">
+                            <i class="bi {% if is_favorite %}bi-star-fill{% else %}bi-star{% endif %}"></i>
+                        </a>
+                    {% endif %}
+                </div>
+
+                <p class="lead text-secondary mb-0">{{ place.summary }}</p>
+            </div>
+
+            {% if user.is_authenticated %}
+            <!-- Sekcja Notatek -->
+            <div class="card card-custom p-4 bg-white">
+                <h4 class="mb-3"><i class="bi bi-journal-text me-2"></i>Twoje notatki do tego miejsca</h4>
+                
+                <form action="{% url 'add_note' place.id %}" method="POST" class="mb-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="redirect_q" value="{{ query }}">
+                    <div class="mb-3">
+                        <textarea name="content" class="form-control" rows="3" placeholder="Wpisz swoją notatkę..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-outline-dark">Dodaj notatkę</button>
+                </form>
+
+                {% if notes %}
+                    <ul class="list-group list-group-flush">
+                        {% for note in notes %}
+                            <li class="list-group-item px-0 py-2">
+                                <small class="text-muted d-block mb-1">{{ note.created_at|date:"d.m.Y H:i" }}</small>
+                                {{ note.content }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted mb-0"><small>Brak notatek dla tego miejsca. Dodaj pierwszą powyżej!</small></p>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% else %}
+            <!-- Brak Wyników -->
+            <div class="alert alert-warning text-center card-custom p-4">
+                <i class="bi bi-exclamation-circle display-4 text-warning mb-2 d-block"></i>
+                <h4 class="fw-bold">Nie znaleziono miejsca: "{{ query }}"</h4>
+                <p class="mb-0 text-muted">Upewnij się, że nazwa została wpisana poprawnie.</p>
+            </div>
+            {% endif %}
+        {% else %}
+            <!-- Ekran Powitalny (widoczny przed wpisaniem wyszukiwania) -->
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-compass display-1 d-block mb-3 text-warning"></i>
+                <p class="lead">Wpisz dowolną nazwę powyżej, aby zobaczyć opis i ciekawostki.</p>
+            </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}

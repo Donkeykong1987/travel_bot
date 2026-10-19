@@ -29,6 +29,7 @@ def fetch_wiki_place(query):
         pass
     return None
 
+@login_required(login_url='login')
 def explore_view(request):
     query = request.GET.get('q', '').strip()
     place_obj = None
