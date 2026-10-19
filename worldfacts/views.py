@@ -2,13 +2,14 @@ import requests
 from urllib.parse import quote
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import login
 from .models import Place, Favorite, Note
 
 def fetch_wiki_place(query):
     if not query:
         return None
     
-    # Kodowanie nazwy do adresu URL (np. spacje na %20)
     encoded_query = quote(query.strip())
     url = f"https://pl.wikipedia.org/api/rest_v1/page/summary/{encoded_query}"
     headers = {'User-Agent': 'WorldfactsApp/1.0'}
@@ -51,14 +52,17 @@ def explore_view(request):
                 is_favorite = Favorite.objects.filter(user=request.user, place=place_obj).exists()
                 notes = Note.objects.filter(user=request.user, place=place_obj)
 
+    recent_places = Place.objects.all().order_by('-created_at')[:5]
+
     context = {
         'query': query,
         'searched': searched,
         'place': place_obj,
         'is_favorite': is_favorite,
-        'notes': notes
+        'notes': notes,
+        'recent_places': recent_places,
     }
-    return render(request, 'places/explore.html', context)
+    return render(request, 'worldfacts/explore.html', context)
 
 @login_required
 def toggle_favorite(request, place_id):
@@ -87,4 +91,15 @@ def add_note(request, place_id):
 @login_required
 def favorites_list(request):
     favorites = Favorite.objects.filter(user=request.user).select_related('place')
-    return render(request, 'places/favorites.html', {'favorites': favorites})
+    return render(request, 'worldfacts/favorites.html', {'favorites': favorites})
+
+def register_view(request):
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('explore')
+    else:
+        form = UserCreationForm()
+    return render(request, 'worldfacts/register.html', {'form': form})

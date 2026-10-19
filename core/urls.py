@@ -1,7 +1,7 @@
 from django.contrib import admin
-from django.urls import path, include  # Pamiętaj o zaimportowaniu 'include'
+from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('places.urls')),  # Podpięcie adresów aplikacji places pod adres główny
+    path('', include('worldfacts.urls')),  # Zmiana z 'places.urls' na 'worldfacts.urls'
 ]
