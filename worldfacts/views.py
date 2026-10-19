@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import requests
 from urllib.parse import quote
-import google.generativeai as genai
+from google import genai
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
@@ -11,19 +11,32 @@ from django.contrib.auth import login
 from .models import Place, Favorite, Note
 
 # Skonfiguruj darmowy klucz API (pobierz z aistudio.google.com)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def generate_ai_facts(text):
-    """Generuje najważniejsze fakty w formacie HTML (lista ul)"""
+    """Generuje fakty z AI z automatycznym przełączaniem modeli w razie przeciążenia (błąd 503)"""
     if not text:
         return ""
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"Jesteś asystentem podróżnym. Na podstawie podanego opisu wypisz 3 do 5 najważniejszych, unikalnych faktów o tym miejscu. Sformatuj odpowiedź wyłącznie jako czysty kod HTML (znaczniki <ul> i <li>, bez pogrubień, bez formatowania Markdown). Opis: {text}"
-        response = model.generate_content(prompt)
-        return response.text.replace('```html', '').replace('```', '').strip()
-    except Exception:
-        return "<ul><li>Nie udało się pobrać faktów AI w tej chwili.</li></ul>"
+    
+    # Lista modeli do przetestowania po kolei w razie błędu
+    models_to_try = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash']
+    
+    prompt = f"Jesteś asystentem podróżnym. Na podstawie podanego opisu wypisz 3 do 5 najważniejszych, unikalnych faktów o tym miejscu. Sformatuj odpowiedź wyłącznie jako czysty kod HTML (znaczniki <ul> i <li>, bez pogrubień, bez formatowania Markdown). Opis: {text}"
+    
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+            if response and response.text:
+                return response.text.replace('```html', '').replace('```', '').strip()
+        except Exception:
+            # Jeśli dany model zgłosi błąd (np. 503 lub 404), pętla przechodzi do kolejnego modelu
+            continue
+            
+    # Jeśli wszystkie modele zawiodą
+    return "<ul><li>Serwery AI są obecnie mocno obciążone (błąd 503). Spróbuj odświeżyć stronę za chwilę.</li></ul>"
 
 def fetch_wiki_place(query):
     """Koryguje błędy w nazwie i pobiera opis z Wikipedii"""
@@ -90,10 +103,16 @@ def explore_view(request):
                 place_obj.summary = place_data['extract']
                 place_obj.save()
 
-            # Uruchomienie AI tylko raz dla danego miejsca
-            if not place_obj.ai_facts:
-                place_obj.ai_facts = generate_ai_facts(place_obj.summary)
-                place_obj.save()
+            # Pobieranie faktów z AI (ponawia próbę, jeśli pole jest puste lub zawierało błąd)
+            if not place_obj.ai_facts or "Nie udało się" in place_obj.ai_facts:
+                generated = generate_ai_facts(place_obj.summary)
+                # Zapisujemy w bazie tylko wtedy, gdy wygenerowany tekst nie jest komunikatem o błędzie
+                if "Nie udało się" not in generated:
+                    place_obj.ai_facts = generated
+                    place_obj.save()
+                else:
+                    # Przypisujemy tymczasowo, ale NIE zapisujemy w bazie, by umożliwić ponowną próbę
+                    place_obj.ai_facts = generated
 
             if request.user.is_authenticated:
                 is_favorite = Favorite.objects.filter(user=request.user, place=place_obj).exists()
