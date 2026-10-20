@@ -13,16 +13,20 @@ from .models import Place, Favorite, Note
 # Skonfiguruj darmowy klucz API (pobierz z aistudio.google.com)
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-def generate_ai_facts(text):
-    """Generuje fakty z AI z automatycznym przełączaniem modeli w razie przeciążenia (błąd 503)"""
-    if not text:
+def generate_ai_facts(title, text):
+    """Generuje fakty z całego internetu i filtruje wyniki wyłącznie do fizycznych miejsc."""
+    if not title:
         return ""
     
-    # Lista modeli do przetestowania po kolei w razie błędu
     models_to_try = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash']
     
-    prompt = f"Jesteś asystentem podróżnym. Na podstawie podanego opisu wypisz 3 do 5 najważniejszych, unikalnych faktów o tym miejscu. Sformatuj odpowiedź wyłącznie jako czysty kod HTML (znaczniki <ul> i <li>, bez pogrubień, bez formatowania Markdown). Opis: {text}"
-    
+    # Nowy, potężny prompt
+    prompt = f"""Jesteś ekspertem ds. geografii i turystyki.
+KROK 1: Sprawdź, czy hasło "{title}" (kontekst: "{text}") to fizyczne miejsce na Ziemi, miasto, państwo, zabytek, budynek lub obiekt geograficzny.
+Jeśli to NIE JEST miejsce (np. to osoba, postać, pojęcie abstrakcyjne, książka, zespół), zwróć WYŁĄCZNIE słowo: NOT_A_PLACE
+KROK 2: Jeśli to JEST miejsce, zignoruj powyższy krótki kontekst z Wikipedii. Przeszukaj CAŁĄ swoją wiedzę (z całego internetu) i wypisz 5 najbardziej fascynujących, tajemniczych lub mało znanych faktów o tym miejscu.
+Odpowiedź zwróć WYŁĄCZNIE jako czysty kod HTML (znaczniki <ul> i <li>, bez pogrubień, bez Markdown)."""
+
     for model_name in models_to_try:
         try:
             response = client.models.generate_content(
@@ -32,11 +36,9 @@ def generate_ai_facts(text):
             if response and response.text:
                 return response.text.replace('```html', '').replace('```', '').strip()
         except Exception:
-            # Jeśli dany model zgłosi błąd (np. 503 lub 404), pętla przechodzi do kolejnego modelu
             continue
             
-    # Jeśli wszystkie modele zawiodą
-    return "<ul><li>Serwery AI są obecnie mocno obciążone (błąd 503). Spróbuj odświeżyć stronę za chwilę.</li></ul>"
+    return "<ul><li>Serwery AI są obecnie mocno obciążone. Spróbuj odświeżyć stronę za chwilę.</li></ul>"
 
 def fetch_wiki_place(query):
     """Koryguje błędy w nazwie i pobiera opis z Wikipedii"""
@@ -83,40 +85,53 @@ def explore_view(request):
     notes = []
     searched = False
     corrected_name = None
+    not_a_place_error = False # Nowa flaga informująca o błędzie walidacji
 
     if query:
         searched = True
-        place_data, corrected_name = fetch_wiki_place(query)
+        corrected_name = query
         
-        if place_data:
-            place_obj, created = Place.objects.get_or_create(
-                wiki_id=place_data['wiki_id'],
-                defaults={
-                    'name': place_data['title'],
-                    'summary': place_data['extract'],
-                    'image_url': place_data['image_url']
-                }
-            )
-            
-            # Zabezpieczenie przed nadpisywaniem obrazków i opisów przy każdym requeście
-            if not created and not place_obj.summary:
-                place_obj.summary = place_data['extract']
-                place_obj.save()
+        # 1. Sprawdź najpierw w lokalnej bazie
+        place_obj = Place.objects.filter(name__iexact=query).first()
+        
+        # 2. Jeśli nie ma w bazie, pobieramy z Wiki i PROSIMY AI O ZATWIERDZENIE
+        if not place_obj:
+            place_data, corrected_name = fetch_wiki_place(query)
+            if place_data:
+                generated_facts = generate_ai_facts(place_data['title'], place_data['extract'])
+                
+                if "NOT_A_PLACE" in generated_facts:
+                    not_a_place_error = True
+                    place_obj = None # Odcinamy tworzenie obiektu - to nie jest miejsce!
+                else:
+                    place_obj, created = Place.objects.get_or_create(
+                        wiki_id=place_data['wiki_id'],
+                        defaults={
+                            'name': place_data['title'],
+                            'summary': place_data['extract'],
+                            'image_url': place_data['image_url'],
+                            'ai_facts': generated_facts if "Serwery" not in generated_facts else ""
+                        }
+                    )
 
-            # Pobieranie faktów z AI (ponawia próbę, jeśli pole jest puste lub zawierało błąd)
-            if not place_obj.ai_facts or "Nie udało się" in place_obj.ai_facts:
-                generated = generate_ai_facts(place_obj.summary)
-                # Zapisujemy w bazie tylko wtedy, gdy wygenerowany tekst nie jest komunikatem o błędzie
-                if "Nie udało się" not in generated:
-                    place_obj.ai_facts = generated
+        # 3. Jeśli obiekt był w bazie, ale AI zawiodło wcześniej (np. błąd 503)
+        if place_obj and (not place_obj.ai_facts or "Serwery" in place_obj.ai_facts):
+            generated_facts = generate_ai_facts(place_obj.name, place_obj.summary)
+            if "NOT_A_PLACE" in generated_facts:
+                place_obj.delete() # Usuwamy błędny, stary rekord
+                not_a_place_error = True
+                place_obj = None
+            else:
+                if "Serwery" not in generated_facts:
+                    place_obj.ai_facts = generated_facts
                     place_obj.save()
                 else:
-                    # Przypisujemy tymczasowo, ale NIE zapisujemy w bazie, by umożliwić ponowną próbę
-                    place_obj.ai_facts = generated
+                    place_obj.ai_facts = generated_facts
 
-            if request.user.is_authenticated:
-                is_favorite = Favorite.objects.filter(user=request.user, place=place_obj).exists()
-                notes = Note.objects.filter(user=request.user, place=place_obj)
+        # 4. Obsługa ulubionych i notatek
+        if place_obj and request.user.is_authenticated:
+            is_favorite = Favorite.objects.filter(user=request.user, place=place_obj).exists()
+            notes = Note.objects.filter(user=request.user, place=place_obj)
 
     recent_places = Place.objects.all().order_by('-created_at')[:5]
 
@@ -128,7 +143,8 @@ def explore_view(request):
         'notes': notes,
         'recent_places': recent_places,
         'original_query': query,
-        'corrected_name': corrected_name
+        'corrected_name': corrected_name,
+        'not_a_place_error': not_a_place_error
     }
     return render(request, 'worldfacts/explore.html', context)
 

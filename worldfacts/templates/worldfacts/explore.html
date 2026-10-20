@@ -32,7 +32,16 @@
         </div>
 
         {% if searched %}
-            {% if place %}
+            
+            <!-- NOWE: Komunikat gdy AI wykryje, że to nie jest miejsce -->
+            {% if not_a_place_error %}
+            <div class="alert alert-danger text-center card-custom p-5 border-0 shadow-sm mt-4">
+                <i class="bi bi-shield-fill-x display-1 text-danger mb-3 d-block"></i>
+                <h2 class="fw-bold text-dark">To nie jest miejsce!</h2>
+                <p class="mb-0 fs-5 text-secondary">Hasło <strong>"{{ corrected_name }}"</strong> nie odnosi się do żadnego fizycznego miejsca, budynku ani zabytku. Aplikacja gromadzi dane wyłącznie o obiektach geograficznych i turystycznych.</p>
+            </div>
+            
+            {% elif place %}
             
             {% if original_query|lower != place.name|lower %}
             <div class="alert alert-info d-flex align-items-center mb-4 border-0 shadow-sm" style="border-radius: 12px;">
