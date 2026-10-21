@@ -5,6 +5,7 @@ class Place(models.Model):
     name = models.CharField(max_length=255)
     wiki_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
     summary = models.TextField()
+    ai_facts = models.TextField(blank=True, null=True)  # To pole musi tutaj być!
     image_url = models.URLField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
